@@ -1,14 +1,6 @@
 // TinyModel {{{1
 TinyModel = function() {
   // Private {{{2
-  var setProps = function(model, props) {
-    for (var index in props) {
-      model.prototype.__properties__.push(new TinyModel.Property({
-        name : props[index][0],
-        type : props[index][1]
-      }));
-    }
-  };
 
   var modelize = function(data) {
     if (data instanceof Array) {
@@ -22,7 +14,7 @@ TinyModel = function() {
           m.__opts__.push(data[o].name);
         }
 
-        m.buildOpts();
+        buildOpts(m);
         m.__isNewRecord__ = false;
         ret.push(m);
       }
@@ -40,66 +32,84 @@ TinyModel = function() {
     return ret;
   };
 
+  var buildOpts = function(model) {
+    for (var o in model.__opts__)
+      for (var i=0 ; i<=model.constructor.__properties__.length ; ++i)
+        if (o === model.constructor.__properties__[i].name) {
+          model.attributes[o] = model.__opts__[o];
+          break;
+        }
+  };
+
   // Public {{{2
   return {
     dataStore : null,
 
-    register : function(className, opts) {
-      var model = eval(className + " = function(opts){this.__opts__=opts||[]}");
+    register : function(name, classOpts) {
+      var model = new Function('opts', 'this.__opts__ = opts');
+      this.Resource.apply(model, [name]);
+      if (classOpts instanceof Function) classOpts.apply(model);
 
-      model.__adapter__ = TinyModel.dataStore;
-      model.__adapter__.createTable(className);
-        
-      model.all = function(opts) {
+      return model;
+    },
+
+    Resource : function(tableName) {
+      // Class Methods {{{3
+
+      var self = this;
+      this.__adapter__ = TinyModel.dataStore;
+      this.__properties__ = [];
+      this.migrate = function() {this.__adapter__.createTable(tableName)};
+      this.property = function(name, type, opts) {
+        var prop = new TinyModel.Property({
+          name : name,
+          type : type
+        });
+
+        this.__properties__.push(prop);
+        return prop;
+      };
+      this.all = function(opts) {
         return modelize.call(this,
           this.__adapter__.execute({
             command : 'all',
-            table : className,
+            table : tableName,
             attributes : (opts || [])
           })
         );
       };
-      model.first = function(opts) {
+      this.first = function(opts) {
         return modelize.call(this,
           this.__adapter__.execute({
             command : 'first',
-            table : className,
+            table : tableName,
             attributes : (opts || [])
           })
         );
       };
-      model.build  = function(opts) { var m = new this(opts); m.buildOpts(); return m };
-      model.create = function(opts) { var m = this.build(opts); m.save(); return m };
+      this.build  = function(opts) { var m = new this(opts); buildOpts(m); return m };
+      this.create = function(opts) { var m = this.build(opts); m.save(); return m };
 
-      model.prototype = {
-        constructor : model,
-
-        tableName : className,
-
+      // Instance Methods {{{3
+      this.prototype = {
+        constructor : self,
+        tableName : tableName,
         __properties__ : [],
-
-        buildOpts : function() {
-          for (var o in this.__opts__)
-            this.attributes[o] = this.__opts__[o];
-        },
-
         __isNewRecord__ : true,
-
         isNew : function() { return this.__isNewRecord__ },
-
         toString : function() {
-          var str = "#<" + className + " ";
-          for (var prop in this.__properties__) {
-            var name = this.__properties__[prop].name;
-            str += "@" + name + ":" + this.attributes[name] + " ";
+          var props = this.constructor.__properties__;
+          var str = ["#<", tableName, " "];
+
+          for (var i=0 ; i<props.length ; ++i) {
+            var name = props[i].name;
+            str = str.concat(["@", name, ":", this.attributes[name], " "]);
           }
-          str += ">";
-
-          return str;
+          str.push(">");
+          return str.join('');
         },
-
         save : function() {
-          model.__adapter__.execute({
+          this.constructor.__adapter__.execute({
             command : 'save',
             table : this.tableName,
             attributes : this.attributes
@@ -107,7 +117,6 @@ TinyModel = function() {
 
           return true;
         },
-
         update  : function(obj) {
           this.attributes = obj;
 
@@ -116,23 +125,18 @@ TinyModel = function() {
           else
             return false;
         },
-
         destroy : function() {
-          model.__adapter__.execute({
+          this.constructor.__adapter__.execute({
             command : 'destroy',
             table : this.tableName,
             attributes : this.attributes
           });
         },
-
-        adapter : function() {return model.__adapter__},
-
+        adapter : function() {return this.constructor.__adapter__},
         attributes : {}
       }
 
-      setProps(model, opts.properties);
-
-      return model;
+      return this;
     }
   }
   // }}}2
@@ -147,6 +151,7 @@ TinyModel.Property = function(opts) {
 TinyModel.Property.prototype.toString = function() {
   return "#<Property @"+this.name+":"+this.type+">";
 }
+
 
 // TinyModel.DataStore {{{1
 TinyModel.DataStore = function() {
@@ -201,12 +206,11 @@ TinyModel.DataStore = function() {
 TinyModel.dataStore = new TinyModel.DataStore;
 // }}}
 
-TinyModel.register("TestModel", {
-  properties : [
-    ['id', Number],
-    ['name', String],
-    ['age', Number]
-  ]
+TestModel = TinyModel.register('test_model', function() {
+  this.property("id", Number);
+  this.property("name", String);
+  this.property("age", Number);
 });
+TestModel.migrate();
 
 /* vim: set ts=2 bs=2 sw=2 et fdm=marker: */
