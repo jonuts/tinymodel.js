@@ -46,7 +46,7 @@ TinyModel = function() {
     dataStore : null,
 
     register : function(name, classOpts) {
-      var model = new Function('opts', 'this.__opts__ = opts');
+      var model = function(opts){this.__opts__ = opts};
       this.Resource.apply(model, [name]);
       if (classOpts instanceof Function) classOpts.apply(model);
 
