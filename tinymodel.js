@@ -47,7 +47,7 @@ TinyModel = function() {
 
   // Public {{{2
   return {
-    dataStore : null,
+    adapter : null,
 
     register : function(name, classOpts) {
       var model = function(opts){this.__opts__ = opts};
@@ -61,7 +61,7 @@ TinyModel = function() {
       // Class Methods {{{3
       var self = this;
 
-      this.__adapter__ = TinyModel.dataStore;
+      this.__adapter__ = TinyModel.adapter;
       this.__properties__ = [];
       this.migrate = function() {this.__adapter__.createTable(tableName)};
       this.property = function(name, type, opts) {
@@ -145,7 +145,6 @@ TinyModel = function() {
             attributes : this.attributes
           });
         },
-        adapter : function() {return this.constructor.__adapter__},
         attributes : {},
         originalAttributes :{}
       }
@@ -216,7 +215,7 @@ TinyModel.DataStore = function() {
 }();
 
 // TinyModel Defaults {{{1
-TinyModel.dataStore = TinyModel.DataStore;
+TinyModel.adapter = TinyModel.DataStore;
 // }}}
 
 TestModel = TinyModel.register('test_model', function() {
