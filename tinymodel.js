@@ -37,6 +37,10 @@ TinyModel = function() {
       for (var i=0 ; i<=model.constructor.__properties__.length ; ++i)
         if (o === model.constructor.__properties__[i].name) {
           model.attributes[o] = model.__opts__[o];
+          model[o] = function(val){
+            if (!val) return model.attributes[o];
+            model.attributes[o] = val;
+          }
           break;
         }
   };
@@ -55,8 +59,8 @@ TinyModel = function() {
 
     Resource : function(tableName) {
       // Class Methods {{{3
-
       var self = this;
+
       this.__adapter__ = TinyModel.dataStore;
       this.__properties__ = [];
       this.migrate = function() {this.__adapter__.createTable(tableName)};
@@ -87,15 +91,21 @@ TinyModel = function() {
           })
         );
       };
-      this.build  = function(opts) { var m = new this(opts); buildOpts(m); return m };
+      this.build  = function(opts) {
+        var m = new this(opts);
+        buildOpts(m);
+        m.__isNewRecord__ = true;
+        return m;
+      };
       this.create = function(opts) { var m = this.build(opts); m.save(); return m };
 
       // Instance Methods {{{3
       this.prototype = {
         constructor : self,
         tableName : tableName,
-        __properties__ : [],
-        __isNewRecord__ : true,
+        isDirty : function() {
+          return false;
+        },
         isNew : function() { return this.__isNewRecord__ },
         toString : function() {
           var props = this.constructor.__properties__;
@@ -108,7 +118,10 @@ TinyModel = function() {
           str.push(">");
           return str.join('');
         },
+        isValid : function() {return true},
         save : function() {
+          if (!this.isValid) return false;
+
           this.constructor.__adapter__.execute({
             command : 'save',
             table : this.tableName,
@@ -117,7 +130,7 @@ TinyModel = function() {
 
           return true;
         },
-        update  : function(obj) {
+        update : function(obj) {
           this.attributes = obj;
 
           if (this.save)
@@ -133,7 +146,8 @@ TinyModel = function() {
           });
         },
         adapter : function() {return this.constructor.__adapter__},
-        attributes : {}
+        attributes : {},
+        originalAttributes :{}
       }
 
       return this;
@@ -151,7 +165,6 @@ TinyModel.Property = function(opts) {
 TinyModel.Property.prototype.toString = function() {
   return "#<Property @"+this.name+":"+this.type+">";
 }
-
 
 // TinyModel.DataStore {{{1
 TinyModel.DataStore = function() {
@@ -187,7 +200,7 @@ TinyModel.DataStore = function() {
     };
 
     this.first = function(opts) {
-      for (var index in store)
+      for (var index=0; index<store.length; ++index)
         for (var key in opts)
           if (store[index][key] === opts[key]) return store[index];
 
@@ -199,15 +212,14 @@ TinyModel.DataStore = function() {
   return {
     execute : function(o) { return db[o.table][o.command](o.attributes); },
     createTable : function(name) { db[name] = new Table },
-  }
-}
+  };
+}();
 
 // TinyModel Defaults {{{1
-TinyModel.dataStore = new TinyModel.DataStore;
+TinyModel.dataStore = TinyModel.DataStore;
 // }}}
 
 TestModel = TinyModel.register('test_model', function() {
-  this.property("id", Number);
   this.property("name", String);
   this.property("age", Number);
 });
