@@ -7,7 +7,7 @@ TinyModel = function() {
       var ret = [];
       for (var o in data) {
         var m = new this;
-        var props = this.prototype.__properties__;
+        var props = this.__properties__;
 
         for (var i in props) {
           var name = props[i].name;
@@ -20,13 +20,14 @@ TinyModel = function() {
       }
     } else if (data instanceof Object) {
       var ret = new this;
-      var props = this.prototype.__properties__;
+      var props = this.__properties__;
 
       for (var i in props) {
         var name = props[i].name;
-        ret.__opts__.push(data[name]);
-        ret.__isNewRecord__ = false;
+        ret.__opts__[name] = data[name];
       }
+      buildOpts(ret);
+      ret.__isNewRecord__ = false;
     }
 
     return ret;
@@ -37,10 +38,11 @@ TinyModel = function() {
       for (var i=0 ; i<=model.constructor.__properties__.length ; ++i)
         if (o === model.constructor.__properties__[i].name) {
           model.attributes[o] = model.__opts__[o];
-          model[o] = function(val){
-            if (!val) return model.attributes[o];
+          model[o] = model.__opts__[o]/*function(val){
+            if (!val) return model.__opts__[o];
+            model.originalAttributes[o] = model.attributes[o];
             model.attributes[o] = val;
-          }
+          }*/
           break;
         }
   };
@@ -50,7 +52,7 @@ TinyModel = function() {
     adapter : null,
 
     register : function(name, classOpts) {
-      var model = function(opts){this.__opts__ = opts};
+      var model = function(opts){this.__opts__ = opts || {}};
       this.Resource.apply(model, [name]);
       if (classOpts instanceof Function) classOpts.apply(model);
 
@@ -62,7 +64,7 @@ TinyModel = function() {
       var self = this;
 
       this.__adapter__ = TinyModel.adapter;
-      this.__properties__ = [];
+      this.__properties__ = [new TinyModel.Property({name:'__DSID__', type:Number})];
       this.migrate = function() {this.__adapter__.createTable(tableName)};
       this.property = function(name, type, opts) {
         var prop = new TinyModel.Property({
@@ -104,26 +106,34 @@ TinyModel = function() {
         constructor : self,
         tableName : tableName,
         isDirty : function() {
+          for (var o in this.originalAttributes)
+            if (this.attributes[o] !== this.originalAttributes[o])
+              return true;
+
           return false;
         },
         isNew : function() { return this.__isNewRecord__ },
         toString : function() {
-          var props = this.constructor.__properties__;
+          var props = this.constructor.__properties__.slice();
           var str = ["#<", tableName, " "];
 
           for (var i=0 ; i<props.length ; ++i) {
             var name = props[i].name;
-            str = str.concat(["@", name, ":", this.attributes[name], " "]);
+            if (name != "__DSID__")
+              str = str.concat(["@", name, ":", this.attributes[name], " "]);
           }
           str.push(">");
           return str.join('');
         },
         isValid : function() {return true},
         save : function() {
-          if (!this.isValid) return false;
+          if (!this.isDirty() && !this.isNew()) return true;
+          if (!this.isValid()) return false;
+
+          var cmd = this.isNew() ? 'create' : 'update';
 
           this.constructor.__adapter__.execute({
-            command : 'save',
+            command : cmd,
             table : this.tableName,
             attributes : this.attributes
           });
@@ -131,9 +141,12 @@ TinyModel = function() {
           return true;
         },
         update : function(obj) {
-          this.attributes = obj;
+          for (var o in obj) {
+            this.originalAttributes[o] = this.attributes[o];
+            this.attributes[o] = obj[o];
+          }
 
-          if (this.save)
+          if (this.save())
             return this;
           else
             return false;
@@ -172,17 +185,33 @@ TinyModel.DataStore = function() {
 
   // Table {{{3
   var Table = function() {
+    var dsid = 0;
     var store = [];
-    var retrieveBy = function(param, val) {
-      for (var index in store)
-        if (store[index].param === val) return store[index];
+
+    var find = function(finder) {
+      for (var index=0 ; index<store.length ; ++index)
+        if (finder.call(store[index])) return [store[index], index];
     };
 
-    this.save = function(thing) {store.push(thing)};
-    this.get = function(id) {retrieveBy('id', id)};
+    this.create = function(thing) {
+      ++dsid;
+      thing.__DSID__ = dsid;
+      store.push(thing)
+    };
+    this.update = function(thing) {
+      var record = find(function() {
+        this.__DSID__ === thing.__DSID__;
+      });
+
+      if (record) store[record[1]] = thing;
+    };
+    this.get = function(id) {
+      var record = find(function() { this.id === id });
+      if (record) return record[0];
+    };
     this.destroy = function(thing) {
-      for (var index in store)
-        if (store[index] == thing) store.splice(index, 1);
+      var record = find(function() {this.__DSID__ === thing.__DSID__});
+      if (record) store.splice(record[1], 1);
     };
 
     this.all = function(opts) {
