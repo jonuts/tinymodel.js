@@ -5,13 +5,13 @@ TinyModel = function() {
   var modelize = function(data) {
     if (data instanceof Array) {
       var ret = [];
-      for (var o in data) {
+      for (var o=0 ; o<data.length ; ++o) {
         var m = new this;
         var props = this.__properties__;
 
-        for (var i in props) {
+        for (var i=0 ; i<props.length ; ++i) {
           var name = props[i].name;
-          m.__opts__.push(data[o].name);
+          m.__opts__[name] = data[o][name];
         }
 
         buildOpts(m);
@@ -22,7 +22,7 @@ TinyModel = function() {
       var ret = new this;
       var props = this.__properties__;
 
-      for (var i in props) {
+      for (var i=0 ; i<props.length ; ++i) {
         var name = props[i].name;
         ret.__opts__[name] = data[name];
       }
@@ -33,16 +33,21 @@ TinyModel = function() {
     return ret;
   };
 
+  var access = function(model, name) {
+    return function(val) {
+      if (!val) return model.attributes[name];
+
+      model.originalAttributes[name] = model.attributes[name];
+      model.attributes[name] = val;
+    }
+  };
+
   var buildOpts = function(model) {
     for (var o in model.__opts__)
       for (var i=0 ; i<=model.constructor.__properties__.length ; ++i)
         if (o === model.constructor.__properties__[i].name) {
           model.attributes[o] = model.__opts__[o];
-          model[o] = model.__opts__[o]/*function(val){
-            if (!val) return model.__opts__[o];
-            model.originalAttributes[o] = model.attributes[o];
-            model.attributes[o] = val;
-          }*/
+          model[o] = access(model, o);
           break;
         }
   };
@@ -112,7 +117,7 @@ TinyModel = function() {
 
           return false;
         },
-        isNew : function() { return this.__isNewRecord__ },
+        isNew : function() { return !!this.__isNewRecord__ },
         toString : function() {
           var props = this.constructor.__properties__.slice();
           var str = ["#<", tableName, " "];
@@ -137,6 +142,9 @@ TinyModel = function() {
             table : this.tableName,
             attributes : this.attributes
           });
+
+          this.__isNewRecord__ = false;
+          this.originalAttributes = {};
 
           return true;
         },
